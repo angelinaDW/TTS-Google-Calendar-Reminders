@@ -16,18 +16,20 @@ from googleapiclient.errors import HttpError
 from dateutil.parser import parse as dtparse
 from datetime import datetime as dt
 
-# If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
-CHECK_FOR_CHANGES_TO_CAL_DELAY = 30 # in seconds
-secondary_thread = None
 
+# Settings
+CHECK_FOR_CHANGES_TO_CAL_DELAY = 30 # How often to check for changes to the calendar, in seconds
+minutesBeforeToAlert = 5 # In minutes, 
+user = "Angelina" # The name you would like the "AI" to call you
+NOTIFY_WHEN_EVENT_IS_ALMOST_OVER = True # Whether to let the user know when their event is almost over
+NOTIFY_WHEN_EVENT_IS_OVER = True # Whether to let the user know when their event ends
+
+secondary_thread = None
 eventsToday = [] # A list of event objects containing all the events under today
-minutesBeforeToAlert = 5
 creds = None
 service = None
-global currentEvent
 currentEvent = None
-user = "Angelina"
 threadEvent = Event()
 
 
@@ -121,13 +123,17 @@ def earlyAlert():
         tts.readText(f"Hey {user}! Your event, {currentEvent['summary']} is starting in about {minutes} minutes and {seconds} seconds.")
 
 def check_for_changes_to_calendar_thread():
+    global currentEvent
     while True:
         # This doesn't seem to be an effective way to compare events...
         print("In checking-for-changes thread")
-        if (get_next_event() != currentEvent):
+        next_e = get_next_event()
+        print(f"New event: {next_e['summary']} Current event: {currentEvent['summary']}")
+        if (next_e != currentEvent):
             print("event was changed")
             # Tell the other thread it needs to restart
             threadEvent.set()
+            currentEvent = get_next_event()
             # Calendar updated
             
         else:
@@ -136,9 +142,9 @@ def check_for_changes_to_calendar_thread():
 
 def main_wait_thread():
     global currentEvent
+    print(f"Currentevent: " + str(currentEvent))
     while True:
         print("In notification/alarm thread.")
-        currentEvent = None
         currentEvent = get_next_event()
         print(f"Chose the event {currentEvent['summary']}")
         secsToWait = time_to_event(currentEvent)
@@ -149,8 +155,8 @@ def main_wait_thread():
         else:
             if (secsToWait > minutesBeforeToAlert * 60):
                 print("Waiting for alarm to go off....")
-                threadEvent.wait(secsToWait - 60*minutesBeforeToAlert) # wait for the seconds, unless we are interrupted by the flag being set
-                if (threadEvent.is_set()): # if the flag is set, reset the timer based on the new time
+                s = threadEvent.wait(secsToWait - 60*minutesBeforeToAlert) # wait for the seconds, unless we are interrupted by the flag being set
+                if (s): # if the flag is set, reset the timer based on the new time
                     print("is this being called?")
                     threadEvent.clear()
                     continue
@@ -159,8 +165,8 @@ def main_wait_thread():
                 #print("made it")
                 earlyAlert()
             print("Waiting for alarm to go off....")
-            threadEvent.wait(secsToWait)
-            if (threadEvent.is_set()):
+            s = threadEvent.wait(secsToWait)
+            if (s):
                     print("is this being called?")
                     threadEvent.clear()
                     continue
@@ -171,6 +177,8 @@ if __name__ == '__main__':
     # Create and start a thread
     tts.init()
     tts.readText("hello world")
+    currentEvent = get_next_event()
+
     # Start the thread that 
     secondary_thread = threading.Thread(target=main_wait_thread, args=())
     secondary_thread.start()
