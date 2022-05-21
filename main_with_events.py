@@ -65,7 +65,9 @@ def get_next_event():
         ignoreAllDayEvents = True
         # Call the Calendar API
         if creds == None:
+            print("Loggging the user in...")
             auth_user()
+            print("Login sucessful.")
         service = build('calendar', 'v3', credentials=creds)
         page_token = None
         while True:
@@ -120,6 +122,8 @@ def earlyAlert():
 
 def check_for_changes_to_calendar_thread():
     while True:
+        # This doesn't seem to be an effective way to compare events...
+        print("In checking-for-changes thread")
         if (get_next_event() != currentEvent):
             print("event was changed")
             # Tell the other thread it needs to restart
@@ -133,7 +137,7 @@ def check_for_changes_to_calendar_thread():
 def main_wait_thread():
     global currentEvent
     while True:
-        print("In main loop.")
+        print("In notification/alarm thread.")
         currentEvent = None
         currentEvent = get_next_event()
         print(f"Chose the event {currentEvent['summary']}")
@@ -147,6 +151,8 @@ def main_wait_thread():
                 print("Waiting for alarm to go off....")
                 threadEvent.wait(secsToWait - 60*minutesBeforeToAlert) # wait for the seconds, unless we are interrupted by the flag being set
                 if (threadEvent.is_set()): # if the flag is set, reset the timer based on the new time
+                    print("is this being called?")
+                    threadEvent.clear()
                     continue
                 earlyAlert()
             else:
@@ -155,12 +161,17 @@ def main_wait_thread():
             print("Waiting for alarm to go off....")
             threadEvent.wait(secsToWait)
             if (threadEvent.is_set()):
+                    print("is this being called?")
+                    threadEvent.clear()
                     continue
             alert()
 
 
 if __name__ == '__main__':
-    # Create and start a thread 
+    # Create and start a thread
+    tts.init()
+    tts.readText("hello world")
+    # Start the thread that 
     secondary_thread = threading.Thread(target=main_wait_thread, args=())
     secondary_thread.start()
     check_for_changes_to_calendar_thread()
