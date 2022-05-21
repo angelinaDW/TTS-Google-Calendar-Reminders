@@ -33,6 +33,7 @@ service = None
 currentEvent = None
 threadEvent = Event()
 saySomethingEvent = Event()
+whatToSay = ""
 
 def print_debug(s: str):
     if (DEBUG_MODE):
@@ -109,31 +110,39 @@ def time_to_event(e, minutesBefore = 0):
 
 def schedule_say(what):
     # schedules the main thread to say something
-
+    global whatToSay
+    global saySomethingEvent
+    whatToSay = what
+    print(whatToSay)
+    saySomethingEvent.set()
 
 def alert():
-    print(f"{currentEvent['summary']} is starting soon!")
-    tts.readText(f"Hey there! Your event {currentEvent['summary']} is starting now!")
+    schedule_say(f"{currentEvent['summary']} is starting now!")
 
 def earlyAlert():
     #print(f"{currentEvent['summary']} is starting in less than {minutesBeforeToAlert} minutes!")
     minutes = int(time_to_event(currentEvent)/60)
     seconds = round(time_to_event(currentEvent) - minutes*60)
-    print(f"{currentEvent['summary']} is starting in less than {minutes} minutes!")
-    tts.readText(f"{currentEvent['summary']} is starting in less than {minutes} minutes!")
+    
     if minutes < 1 and seconds < 1:
         alert()
-    if minutes == 0:
-        tts.readText(f"Hey {user}! Your event, {currentEvent['summary']} is starting in about {seconds} seconds.")
+        return
+    elif minutes == 0:
+        s = f"Hey {user}! Your event, {currentEvent['summary']} is starting in about {seconds} seconds."
     elif seconds == 0:
-        tts.readText(f"Hey {user}! Your event, {currentEvent['summary']} is starting in about {minutes} minutes.")
+        s = f"Hey {user}! Your event, {currentEvent['summary']} is starting in about {minutes} minutes."
     else:
-        tts.readText(f"Hey {user}! Your event, {currentEvent['summary']} is starting in about {minutes} minutes and {seconds} seconds.")
+        s = f"Hey {user}! Your event, {currentEvent['summary']} is starting in about {minutes} minutes and {seconds} seconds."
+    schedule_say(s)
 
 def check_for_changes_to_calendar_thread():
     global currentEvent
     while True:
         # This doesn't seem to be an effective way to compare events...
+        if (saySomethingEvent.is_set()):
+            print("Speaking...")
+            tts.readText(whatToSay)
+            saySomethingEvent.clear()
         print_debug("In checking-for-changes thread")
         next_e = get_next_event()
         print_debug(f"New event: {next_e['summary']} Current event: {currentEvent['summary']}")
@@ -146,7 +155,7 @@ def check_for_changes_to_calendar_thread():
             
         else:
             print_debug("nope, current event is still the same")
-        time.sleep(CHECK_FOR_CHANGES_TO_CAL_DELAY)
+        saySomethingEvent.wait(CHECK_FOR_CHANGES_TO_CAL_DELAY)
 
 def main_wait_thread():
     global currentEvent
