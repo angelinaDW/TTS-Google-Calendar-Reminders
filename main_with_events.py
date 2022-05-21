@@ -138,7 +138,6 @@ def earlyAlert():
 def check_for_changes_to_calendar_thread():
     global currentEvent
     while True:
-        # This doesn't seem to be an effective way to compare events...
         if (saySomethingEvent.is_set()):
             print("Speaking...")
             tts.readText(whatToSay)
