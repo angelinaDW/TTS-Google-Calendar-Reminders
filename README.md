@@ -9,6 +9,8 @@ It will also remind you when your event starts.
 In order to use this, you will need to set up a developer api key for google calendar. You should be able to do that by following the instructions here:
 https://developers.google.com/calendar/api/quickstart/python
 
+Then, will need to download your credentials.json file, and place it in the same folder as the python files. After that, it should work.
+
 Please let me know if you have any issues setting it up!
 
 ## Questions and Answers
@@ -21,5 +23,4 @@ As of right now, *you should NOT rely on this as your only reminder system for m
 
 Right now, I'm focused on making sure the project works properly with the features it has. So, it depends on the complexity of the feature, but the answer is likely "not for a while."
 
-
-Thank you so much for stopping by. I hope you find this software useful. :)
+Thank you so much for stopping by. :)
