@@ -6,3 +6,6 @@ def readText(s):
     engine.runAndWait()
 
 
+volume = engine.getProperty('volume')   #getting to know current volume level (min=0 and max=1)
+engine.setProperty('volume',2.0) 
+print (volume)      

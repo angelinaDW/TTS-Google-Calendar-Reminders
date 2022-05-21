@@ -5,6 +5,8 @@ import time
 import os.path
 import pytz
 import textToSpeech as tts
+import threading
+from threading import Event
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -16,12 +18,17 @@ from datetime import datetime as dt
 
 # If modifying these scopes, delete the file token.json.
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+CHECK_FOR_CHANGES_TO_CAL_DELAY = 30 # in seconds
+secondary_thread = None
+
 eventsToday = [] # A list of event objects containing all the events under today
 minutesBeforeToAlert = 5
 creds = None
 service = None
 global currentEvent
 currentEvent = None
+user = "Angelina"
+threadEvent = Event()
 
 
 def auth_user():
@@ -40,52 +47,6 @@ def auth_user():
         with open('token.json', 'w') as token:
             token.write(creds.to_json())
     print("credentials loaded.")
-    
-
-def main():
-    """Shows basic usage of the Google Calendar API.
-    Prints the start and name of the next 10 events on the user's calendar.
-    """
-    # The file token.json stores the user's access and refresh tokens, and is
-    # created automatically when the authorization flow completes for the first
-    # time.
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
-        # If there are no (valid) credentials available, let the user log in.
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    'credentials.json', SCOPES)
-                creds = flow.run_local_server(port=0)
-            # Save the credentials for the next run
-            with open('token.json', 'w') as token:
-                token.write(creds.to_json())
-    
-
-    try:
-        service = build('calendar', 'v3', credentials=creds)
-
-        # Call the Calendar API
-        now = datetime.datetime.utcnow().isoformat() + 'Z'  # 'Z' indicates UTC time
-        print('Getting the upcoming 10 events')
-        events_result = service.events().list(calendarId='primary', timeMin=now,
-                                              maxResults=10, singleEvents=True,
-                                              orderBy='startTime').execute()
-        events = events_result.get('items', [])
-
-        if not events:
-            print('No upcoming events found.')
-            return
-
-        # Prints the start and name of the next 10 events
-        for event in events:
-            start = event['start'].get('dateTime', event['start'].get('date'))
-            print(start, event['summary'])
-
-    except HttpError as error:
-        print('An error occurred: %s' % error)
 
 
 def event_is_all_day(e):
@@ -103,29 +64,27 @@ def event_is_all_day(e):
 def get_next_event():
         ignoreAllDayEvents = True
         # Call the Calendar API
-        auth_user()
+        if creds == None:
+            auth_user()
         service = build('calendar', 'v3', credentials=creds)
         page_token = None
         while True:
             now = datetime.datetime.utcnow().isoformat() + 'Z'  # 'Z' indicates UTC time
             
-            events_result = service.events().list(calendarId='primary', pageToken = page_token, timeMin=now,
+            events_result = service.events().list(calendarId='primary', timeMin=now, pageToken = page_token,
                                                   maxResults=1, singleEvents=True,
                                                   orderBy='startTime').execute()
             event = events_result.get('items', [])[0]
             page_token = events_result.get("nextPageToken")
 
-            if (event_is_all_day(event)):
-                print("event is all day, let's look for the next event")
+            if (event_is_all_day(event) or time_to_event(event) < 0):
+                print(f"{event['summary']} is all-day, or already happened.")
             else:
-                print("Non-all day event found!")
-                break
+                print(f"{event['summary']} is a non-all day event that hasn't happened yet.")
+                return event
             if not event:
                 print('No upcoming events found.')
                 return
-
-        print(type(event))
-        return event
         #for event in events:
             #start = event['start'].get('dateTime')
             #print("Datetime of next event: {}".format(start))
@@ -134,42 +93,74 @@ def get_next_event():
 def time_to_event(e, minutesBefore = 0):
 
     dt = dtparse(e['start'].get('dateTime'))
-    print("type of dt:")
-    print(type(dt))
     if dt == None:
         raise Exception("Non-event passed to time_to_event!")
 
     now = datetime.datetime.utcnow()
     now = pytz.utc.localize(now)
     diff = (dt - now).total_seconds()
-    print("there are " + str(diff) + "seconds to the evnet.")
     return diff
 
 def alert():
     print(f"{currentEvent['summary']} is starting soon!")
-    tts.readText(f"Your event {currentEvent['summary']} is starting now!")
+    tts.readText(f"Hey there! Your event {currentEvent['summary']} is starting now!")
 
 def earlyAlert():
     print(f"{currentEvent['summary']} is starting in less than {minutesBeforeToAlert} minutes!")
-    tts.readText(f"Hey {user}! Your event, {currentEvent['summary']} is starting in less than {minutesBeforeToAlert} minutes!")
+    minutes = int(time_to_event(currentEvent)/60)
+    seconds = round(time_to_event(currentEvent) - minutes*60)
+    if minutes < 1 and seconds < 1:
+        alert()
+    if minutes == 0:
+        tts.readText(f"Hey {user}! Your event, {currentEvent['summary']} is starting in about {seconds} seconds.")
+    elif seconds == 0:
+        tts.readText(f"Hey {user}! Your event, {currentEvent['summary']} is starting in about {minutes} minutes.")
+    else:
+        tts.readText(f"Hey {user}! Your event, {currentEvent['summary']} is starting in about {minutes} minutes and {seconds} seconds.")
+
+def check_for_changes_to_calendar_thread():
+    while True:
+        if (get_next_event() != currentEvent):
+            print("event was changed")
+            # Tell the other thread it needs to restart
+            threadEvent.set()
+            # Calendar updated
+            
+        else:
+            print("nope, current event is still the same")
+        time.sleep(CHECK_FOR_CHANGES_TO_CAL_DELAY)
 
 def main_wait_thread():
     global currentEvent
-    currentEvent = get_next_event()
-    print("current Event: " + str(currentEvent))
-    secsToWait = time_to_event(currentEvent)
+    while True:
+        print("In main loop.")
+        currentEvent = None
+        currentEvent = get_next_event()
+        print(f"Chose the event {currentEvent['summary']}")
+        secsToWait = time_to_event(currentEvent)
 
-    if secsToWait < 0:
-        # do alarm now
-        alert()
-    else:
-        if (minutesBeforeToAlert > 0):
-            print("Wating....")
-            time.sleep(secsToWait - 60*minutesBeforeToAlert)
-            earlyAlert()
-        time.sleep(secsToWait())
-        alert()
+        if secsToWait <= 0:
+            # do alarm now
+            alert()
+        else:
+            if (secsToWait > minutesBeforeToAlert * 60):
+                print("Waiting for alarm to go off....")
+                threadEvent.wait(secsToWait - 60*minutesBeforeToAlert) # wait for the seconds, unless we are interrupted by the flag being set
+                if (threadEvent.is_set()): # if the flag is set, reset the timer based on the new time
+                    continue
+                earlyAlert()
+            else:
+                #print("made it")
+                earlyAlert()
+            print("Waiting for alarm to go off....")
+            threadEvent.wait(secsToWait)
+            if (threadEvent.is_set()):
+                    continue
+            alert()
 
 
 if __name__ == '__main__':
-    main_wait_thread()
+    # Create and start a thread 
+    secondary_thread = threading.Thread(target=main_wait_thread, args=())
+    secondary_thread.start()
+    check_for_changes_to_calendar_thread()
