@@ -19,11 +19,12 @@ from datetime import datetime as dt
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
 # Settings
-CHECK_FOR_CHANGES_TO_CAL_DELAY = 30 # How often to check for changes to the calendar, in seconds
+CHECK_FOR_CHANGES_TO_CAL_DELAY = 15 # How often to check for changes to the calendar, in seconds
 minutesBeforeToAlert = 5 # In minutes, 
 user = "Angelina" # The name you would like the "AI" to call you
 NOTIFY_WHEN_EVENT_IS_ALMOST_OVER = True # Whether to let the user know when their event is almost over
 NOTIFY_WHEN_EVENT_IS_OVER = True # Whether to let the user know when their event ends
+DEBUG_MODE = False # If debug mode is false, debug messages won't be printed
 
 secondary_thread = None
 eventsToday = [] # A list of event objects containing all the events under today
@@ -31,7 +32,11 @@ creds = None
 service = None
 currentEvent = None
 threadEvent = Event()
+saySomethingEvent = Event()
 
+def print_debug(s: str):
+    if (DEBUG_MODE):
+        print(s)
 
 def auth_user():
     global creds
@@ -82,16 +87,13 @@ def get_next_event():
             page_token = events_result.get("nextPageToken")
 
             if (event_is_all_day(event) or time_to_event(event) < 0):
-                print(f"{event['summary']} is all-day, or already happened.")
+                print_debug(f"{event['summary']} is all-day, or already happened.")
             else:
-                print(f"{event['summary']} is a non-all day event that hasn't happened yet.")
+                print_debug(f"{event['summary']} is a non-all day event that hasn't happened yet.")
                 return event
             if not event:
                 print('No upcoming events found.')
                 return
-        #for event in events:
-            #start = event['start'].get('dateTime')
-            #print("Datetime of next event: {}".format(start))
 
 
 def time_to_event(e, minutesBefore = 0):
@@ -105,14 +107,20 @@ def time_to_event(e, minutesBefore = 0):
     diff = (dt - now).total_seconds()
     return diff
 
+def schedule_say(what):
+    # schedules the main thread to say something
+
+
 def alert():
     print(f"{currentEvent['summary']} is starting soon!")
     tts.readText(f"Hey there! Your event {currentEvent['summary']} is starting now!")
 
 def earlyAlert():
-    print(f"{currentEvent['summary']} is starting in less than {minutesBeforeToAlert} minutes!")
+    #print(f"{currentEvent['summary']} is starting in less than {minutesBeforeToAlert} minutes!")
     minutes = int(time_to_event(currentEvent)/60)
     seconds = round(time_to_event(currentEvent) - minutes*60)
+    print(f"{currentEvent['summary']} is starting in less than {minutes} minutes!")
+    tts.readText(f"{currentEvent['summary']} is starting in less than {minutes} minutes!")
     if minutes < 1 and seconds < 1:
         alert()
     if minutes == 0:
@@ -126,27 +134,28 @@ def check_for_changes_to_calendar_thread():
     global currentEvent
     while True:
         # This doesn't seem to be an effective way to compare events...
-        print("In checking-for-changes thread")
+        print_debug("In checking-for-changes thread")
         next_e = get_next_event()
-        print(f"New event: {next_e['summary']} Current event: {currentEvent['summary']}")
+        print_debug(f"New event: {next_e['summary']} Current event: {currentEvent['summary']}")
         if (next_e != currentEvent):
-            print("event was changed")
+            print("Local calendar synced with Google Calendar.")
             # Tell the other thread it needs to restart
             threadEvent.set()
             currentEvent = get_next_event()
             # Calendar updated
             
         else:
-            print("nope, current event is still the same")
+            print_debug("nope, current event is still the same")
         time.sleep(CHECK_FOR_CHANGES_TO_CAL_DELAY)
 
 def main_wait_thread():
     global currentEvent
-    print(f"Currentevent: " + str(currentEvent))
+    print_debug(f"currentEvent " + str(currentEvent))
     while True:
-        print("In notification/alarm thread.")
+        #tts.readText("testo")
+        print_debug("In notification/alarm thread.")
         currentEvent = get_next_event()
-        print(f"Chose the event {currentEvent['summary']}")
+        print(f"Upcoming event: {currentEvent['summary']}")
         secsToWait = time_to_event(currentEvent)
 
         if secsToWait <= 0:
@@ -157,7 +166,7 @@ def main_wait_thread():
                 print("Waiting for alarm to go off....")
                 s = threadEvent.wait(secsToWait - 60*minutesBeforeToAlert) # wait for the seconds, unless we are interrupted by the flag being set
                 if (s): # if the flag is set, reset the timer based on the new time
-                    print("is this being called?")
+                    print_debug("is this being called?")
                     threadEvent.clear()
                     continue
                 earlyAlert()
@@ -167,7 +176,7 @@ def main_wait_thread():
             print("Waiting for alarm to go off....")
             s = threadEvent.wait(secsToWait)
             if (s):
-                    print("is this being called?")
+                    print_debug("is this being called?")
                     threadEvent.clear()
                     continue
             alert()
@@ -176,7 +185,6 @@ def main_wait_thread():
 if __name__ == '__main__':
     # Create and start a thread
     tts.init()
-    tts.readText("hello world")
     currentEvent = get_next_event()
 
     # Start the thread that 
