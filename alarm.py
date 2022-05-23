@@ -40,7 +40,7 @@ class Alarm:
         return secondsFromNowUntilDT(self.goOffTime)
 
     def __str__(self):
-        return f"[Alarm] '{self.event['summary']}': {str(self.timeLeft())} minutes until {self.type} alarm"
+        return f"[Alarm] '{self.event['summary']}': {str(self.timeLeft()/60)} minutes until {self.type} alarm"
     def __eq__(self, other):
         return self.goOffTime == other.goOffTime
 

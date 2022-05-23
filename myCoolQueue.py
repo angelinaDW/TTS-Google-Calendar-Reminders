@@ -3,6 +3,7 @@ class myCoolQueue:
     
     def __init__(self):
         self.queue = []
+        self._iterationIndex = -1
 
     def take(self) -> object:
         return self.queue.pop(0)
@@ -27,4 +28,14 @@ class myCoolQueue:
         # todo: test this method
 
     def __iter__(self):
-        self.queue.__iter__()
+        self._iterationIndex = 0
+        return self # this is its own iterable
+    
+
+    def __next__(self):
+        if self._iterationIndex >= len(self.queue):
+            raise StopIteration()
+        else:
+            tmp = self._iterationIndex
+            self._iterationIndex += 1
+            return self.queue[tmp]

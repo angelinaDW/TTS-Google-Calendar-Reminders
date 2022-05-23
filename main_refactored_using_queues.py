@@ -29,7 +29,7 @@ DESKTOP_NOTIFICATIONS = True # Whether to also send desktop notifications
 NOTIFY_WHEN_EVENT_IS_ALMOST_OVER = True # Whether to let the user know when their event is almost over
 NOTIFY_WHEN_EVENT_IS_OVER = True # Whether to let the user know when their event ends
 WARN_USER_EARLY = True
-minutesBeforeToAlert = 1 # How many minutes in advance the computer should warn the user before an event
+minutesBeforeToAlert = 3 # How many minutes in advance the computer should warn the user before an event
 minutesBeforeEndAlert = 5
 user = "Username" # The name you would like the "AI" to call you
 greetings = [f"Hey there {user}!", f"Good {getTimeOfDay()}, {user}!", "Hey {user}! Nice to see you again."]
@@ -48,13 +48,11 @@ whatToSay = ""
 
 def schedule_say(what):
     # schedules the main thread to say something
-    print("did we get here successfully?")
     global whatToSay
     global saySomethingEvent
     # Also show a notification, if the user's preferences are set to do so
     notification.notify(title="Upcoming Event", message=what, app_icon=None, timeout=20)
     whatToSay = what
-    print(whatToSay)
     saySomethingEvent.set()
 
 import alarm
@@ -95,25 +93,29 @@ def getAllEventsToday() -> list[dict]:
     service = build('calendar', 'v3', credentials=creds)
     page_token = None
     now = datetime.datetime.utcnow().isoformat() + "Z"
-    print("now: " + str(now))
+    #print("now: " + str(now))
     endOfDay = datetime.datetime(datetime.datetime.now().year, datetime.datetime.now().month, datetime.datetime.now().day + 1, 0)
     endOfDayUTC = naiveLocalDateTimeToUTC(endOfDay)
     
-    print("----")
-    print(endOfDayUTC.isoformat())
+    #print("----")
+    #print(endOfDayUTC.isoformat())
     events_result = service.events().list(calendarId='primary', timeMin=now, timeMax=(endOfDayUTC.isoformat()), pageToken = page_token,
                                             maxResults=250, singleEvents=True,
                                             orderBy='startTime').execute()
     events = events_result.get('items', [])
-    print("Events before weeding")
+    '''
+    #print("Events before weeding")
     for e in events:
         print(e['summary'])
+    '''
     events = [e for e in events if not isAllDayEvent(e) and secondsFromNowUntilDT(stringToDateTime(e['start'].get("dateTime"))) > 0]
     page_token = events_result.get("nextPageToken")
+    '''
     print("Events after weeding")
     for e in events:
         print(e['summary'])
     print(f"Are there more events available? {page_token != None}")
+    '''
     return events
 
 
@@ -126,8 +128,6 @@ def checkForChangesToCalendar():
             tts.readText(whatToSay)
             saySomethingEvent.clear()
         print_debug("In checking-for-changes thread")
-        #next_e = getNextCalendarEvent()
-        #print_debug(f"New event: {next_e['summary']} Current event: {currentCalendarEvent['summary']}")
         if (getAllEventsToday() != eventsToday):
             print("Calendar changes detected.")
             # Tell the other thread it needs to restart
@@ -137,6 +137,7 @@ def checkForChangesToCalendar():
         else:
             print_debug("nope, current event is still the same")
         saySomethingEvent.wait(CHECK_FOR_CHANGES_TO_CAL_DELAY)
+        
 
 def addEventAlarmsToQueue(e: dict):
     '''
@@ -181,7 +182,7 @@ def waitForAlarmThread():
             continue # skip this alarm, it's too late now
         else:   # Wait until alarm
             print("Time until next alarm: " + str(upcomingAlarm.timeLeft()/60) + " minutes")
-            datetimeUtils.waitUntilDatetimeOrEvent(upcomingAlarm.goOffTime, calendarChangedFromAbove, timeExpiredCallback = upcomingAlarm.goOff, eventTriggeredCallback = onCalendarSync, calEvent = currentCalendarEvent)
+            datetimeUtils.waitUntilDatetimeOrEvent(upcomingAlarm.goOffTime, calendarChangedFromAbove, timeExpiredCallback = upcomingAlarm.goOff, eventTriggeredCallback = onCalendarSync, calEvent = upcomingAlarm.event)
 
     if restart_flag:
         waitForAlarmThread()
@@ -206,6 +207,6 @@ if __name__ == '__main__':
     print("Getting today's events...")
     eventsToday = getAllEventsToday()
     # Start the thread that 
-    waitForAlarmThread = threading.Thread(target=waitForAlarmThread, args=())
-    waitForAlarmThread.start()
+    wThread = threading.Thread(target=waitForAlarmThread, args=())
+    wThread.start()
     checkForChangesToCalendar()

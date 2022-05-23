@@ -26,7 +26,7 @@ def XMinutesBeforeAfter(referenceDt: dt, minutesBeforeAfter: float) -> dt:
     Returns a new datetime object minutesBeforeAfter minutes before or after referenceDt
     For instance, if you pass in -5 for minutesBeforeAfter, it will return a datetime object 5 minutes before referenceDt
     '''
-    return referenceDt - datetime.timedelta(minutes = minutesBeforeAfter)
+    return referenceDt + datetime.timedelta(minutes = minutesBeforeAfter)
 
 def naiveLocalDateTimeToUTC(naive: dt):
      local = get_localzone().localize(naive)
