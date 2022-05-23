@@ -5,6 +5,7 @@ import threading
 from threading import Event
 from types import FunctionType
 import pytz
+from tzlocal import get_localzone
 
 
 def secondsBetween(earlier: dt, later: dt) -> float:
@@ -27,6 +28,9 @@ def XMinutesBeforeAfter(referenceDt: dt, minutesBeforeAfter: float) -> dt:
     '''
     return referenceDt - datetime.timedelta(minutes = minutesBeforeAfter)
 
+def naiveLocalDateTimeToUTC(naive: dt):
+     local = get_localzone().localize(naive)
+     return local.astimezone(pytz.utc)
 
 def getTimeOfDay() -> str:
     '''
@@ -51,13 +55,13 @@ def stringToDateTime(s: str) -> dt:
         raise Exception("Non-event passed to time_to_event!")
     return d
 
-def waitUntilDatetimeOrEvent(d: dt, event: Event, timeExpiredCallback: FunctionType, eventTriggeredCallback: FunctionType):
+def waitUntilDatetimeOrEvent(d: dt, event: Event, timeExpiredCallback: FunctionType, eventTriggeredCallback: FunctionType, calEvent: dict):
     # Waits until either the current time >= dt, or event happens
     
     result = event.wait( secondsBetween(getCurDT(), d) )
     if (result): # if the event was triggered
         print("Event triggered")
-        eventTriggeredCallback()
+        eventTriggeredCallback(calEvent)
     else:
         print("Time expired")
         timeExpiredCallback()

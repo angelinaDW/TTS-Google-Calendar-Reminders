@@ -16,6 +16,8 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from datetime import datetime as dt
 from myCoolQueue import myCoolQueue
+getTimeOfDay = datetimeUtils.getTimeOfDay
+from plyer import notification
 
 
 
@@ -23,11 +25,11 @@ SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
 # Settings
 CHECK_FOR_CHANGES_TO_CAL_DELAY = 15 # How often to check for changes to the calendar, in seconds
-
+DESKTOP_NOTIFICATIONS = True # Whether to also send desktop notifications
 NOTIFY_WHEN_EVENT_IS_ALMOST_OVER = True # Whether to let the user know when their event is almost over
 NOTIFY_WHEN_EVENT_IS_OVER = True # Whether to let the user know when their event ends
 WARN_USER_EARLY = True
-minutesBeforeToAlert = 5 # How many minutes in advance the computer should warn the user before an event
+minutesBeforeToAlert = 1 # How many minutes in advance the computer should warn the user before an event
 minutesBeforeEndAlert = 5
 user = "Username" # The name you would like the "AI" to call you
 greetings = [f"Hey there {user}!", f"Good {getTimeOfDay()}, {user}!", "Hey {user}! Nice to see you again."]
@@ -39,7 +41,6 @@ waitForAlarmThread = None
 eventsToday = [] # A list of event objects containing all the events under today
 creds = None
 service = None
-currentCalendarEvent = None
 
 calendarChangedFromAbove = Event() # Invoked when new changes are found from the google calendar
 saySomethingEvent = Event() # Invoked when we want to have the tts run something
@@ -47,8 +48,11 @@ whatToSay = ""
 
 def schedule_say(what):
     # schedules the main thread to say something
+    print("did we get here successfully?")
     global whatToSay
     global saySomethingEvent
+    # Also show a notification, if the user's preferences are set to do so
+    notification.notify(title="Upcoming Event", message=what, app_icon=None, timeout=20)
     whatToSay = what
     print(whatToSay)
     saySomethingEvent.set()
@@ -79,52 +83,55 @@ def auth_user():
             token.write(creds.to_json())
     print("credentials loaded.")
 
-# Returns the next event
-def getNextCalendarEvent():
-        ignoreAllDayEvents = True
-        # Call the Calendar API
-        if creds == None:
-            print("Loggging the user in...")
-            auth_user()
-            print("Login sucessful.")
-        service = build('calendar', 'v3', credentials=creds)
-        page_token = None
-        while True:
-            now = datetime.datetime.utcnow().isoformat() + 'Z'  # 'Z' indicates UTC time
-            
-            events_result = service.events().list(calendarId='primary', timeMin=now, pageToken = page_token,
-                                                  maxResults=1, singleEvents=True,
-                                                  orderBy='startTime').execute()
-            event = events_result.get('items', [])[0]
-            page_token = events_result.get("nextPageToken")
-
-            if (isAllDayEvent(event) or secondsFromNowUntilDT(stringToDateTime(event['start'].get("dateTime"))) < 0):
-                print_debug(f"{event['summary']} is all-day, or already happened.")
-            else:
-                print_debug(f"{event['summary']} is a non-all day event that hasn't happened yet.")
-                return event
-            if not event:
-                print('No upcoming events found.')
-                return
-
+def getAllEventsToday() -> list[dict]:
+    '''
+    Returns a list of all the events currently scheduled for today
+    '''
+    # Call the Calendar API
+    if creds == None:
+        print("Loggging the user in...")
+        auth_user()
+        print("Login sucessful.")
+    service = build('calendar', 'v3', credentials=creds)
+    page_token = None
+    now = datetime.datetime.utcnow().isoformat() + "Z"
+    print("now: " + str(now))
+    endOfDay = datetime.datetime(datetime.datetime.now().year, datetime.datetime.now().month, datetime.datetime.now().day + 1, 0)
+    endOfDayUTC = naiveLocalDateTimeToUTC(endOfDay)
+    
+    print("----")
+    print(endOfDayUTC.isoformat())
+    events_result = service.events().list(calendarId='primary', timeMin=now, timeMax=(endOfDayUTC.isoformat()), pageToken = page_token,
+                                            maxResults=250, singleEvents=True,
+                                            orderBy='startTime').execute()
+    events = events_result.get('items', [])
+    print("Events before weeding")
+    for e in events:
+        print(e['summary'])
+    events = [e for e in events if not isAllDayEvent(e) and secondsFromNowUntilDT(stringToDateTime(e['start'].get("dateTime"))) > 0]
+    page_token = events_result.get("nextPageToken")
+    print("Events after weeding")
+    for e in events:
+        print(e['summary'])
+    print(f"Are there more events available? {page_token != None}")
+    return events
 
 
 # Poorly-named function, as this also handles text-to-speech
 def checkForChangesToCalendar():
-    global currentCalendarEvent
+    global eventsToday
     while True:
         if (saySomethingEvent.is_set()):
             print("Speaking...")
             tts.readText(whatToSay)
             saySomethingEvent.clear()
         print_debug("In checking-for-changes thread")
-        next_e = getNextCalendarEvent()
-        print_debug(f"New event: {next_e['summary']} Current event: {currentCalendarEvent['summary']}")
-        if (next_e != currentCalendarEvent):
-            print("Local calendar synced with Google Calendar.")
+        #next_e = getNextCalendarEvent()
+        #print_debug(f"New event: {next_e['summary']} Current event: {currentCalendarEvent['summary']}")
+        if (getAllEventsToday() != eventsToday):
+            print("Calendar changes detected.")
             # Tell the other thread it needs to restart
             calendarChangedFromAbove.set()
-            currentCalendarEvent = getNextCalendarEvent()
             # Calendar updated
             
         else:
@@ -147,37 +154,57 @@ def addEventAlarmsToQueue(e: dict):
         alarmsQueue.append( alarm.Alarm( stringToDateTime(e['end'].get('dateTime') ), e, alarm.ALARMTYPE.onEnd )   )
    
 def waitForAlarmThread():
-    global currentCalendarEvent # allow us to actually access and modify currentCalendarEvent from inside this funciton
-    print_debug(f"currentCalendarEvent " + str(currentCalendarEvent))
-    while True:
-        print_debug("In notification/alarm thread.")
-        currentCalendarEvent = getNextCalendarEvent()
-        # Adds the alarms we care about (determined based on the user's settings) to the queue for this event
-        addEventAlarmsToQueue(currentCalendarEvent)
-        
-        print(f"Upcoming event: {currentCalendarEvent['summary']} ")
+    #global currentCalendarEvent # allow us to actually access and modify currentCalendarEvent from inside this funciton
+    #print_debug(f"currentCalendarEvent " + str(currentCalendarEvent))
+    '''
+    1. Get all
+    '''
+    restart_flag = False
+    global eventsToday
+    for calEvent in eventsToday:
+        addEventAlarmsToQueue(calEvent)
+    alarmsQueue.sort() # Sort the alarms in order
+    # Let's verify that this worked properly
+    for a in alarmsQueue:
+        print(a)
 
-        while len(alarmsQueue) > 0:
-            upcomingAlarm: alarm.Alarm = alarmsQueue.take() # Takes the alarm who has been in line the longest out of line
-            
-            if upcomingAlarm.hasAlreadyPassed() and upcomingAlarm.minutesSincePassed() <= alarm.MAX_LATE_GOOFF: # If the alarm was supposed to already happen, but it's in a "buffer zone" where it can go off late...
-                print("alarm has already passed")
-                upcomingAlarm.goOff()
-            elif upcomingAlarm.hasAlreadyPassed():
-                continue # skip this alarm, it's too late now
-            else:   
-                datetimeUtils.waitUntilDatetimeOrEvent(upcomingAlarm.goOffTime, calendarChangedFromAbove, upcomingAlarm.goOff, onCalendarSync)
-            
-def onCalendarSync():
-    alarmsQueue.clear() # clear the queue so that we can rebuild it next time
-    calendarChangedFromAbove.clear() # mark the event as having already happened
+
+    while len(alarmsQueue) > 0:
+        upcomingAlarm: alarm.Alarm = alarmsQueue.take() # Takes the alarm who has been in line the longest out of line
+        print(f"upcomingAlarm: {upcomingAlarm}")
+        
+        # If the alarm technically already happened, but we are in a buffer zone, go off now
+        if upcomingAlarm.hasAlreadyPassed() and upcomingAlarm.minutesSincePassed() <= alarm.MAX_LATE_GOOFF:
+            print("alarm has already passed")
+            upcomingAlarm.goOff()
+        elif upcomingAlarm.hasAlreadyPassed():
+            continue # skip this alarm, it's too late now
+        else:   # Wait until alarm
+            print("Time until next alarm: " + str(upcomingAlarm.timeLeft()/60) + " minutes")
+            datetimeUtils.waitUntilDatetimeOrEvent(upcomingAlarm.goOffTime, calendarChangedFromAbove, timeExpiredCallback = upcomingAlarm.goOff, eventTriggeredCallback = onCalendarSync, calEvent = currentCalendarEvent)
+
+    if restart_flag:
+        waitForAlarmThread()
+    else: # We've gone through all of the events on the calendar currently
+        calendarChangedFromAbove.wait(timeout=None) # Wait until more events are added
+        calendarChangedFromAbove.clear()
+        eventsToday = getAllEventsToday() 
+        waitForAlarmThread()
+def onCalendarSync(calEvent: dict):
+    # a is the alarm that was interrupted while this was happening
+    alarmsQueue.clear() # Clear the queue so that we can rebuild it next time
+    calendarChangedFromAbove.clear() # Reset the flag
+    global eventsToday
+    eventsToday = getAllEventsToday() 
+    restart_flag = True
 
 if __name__ == '__main__':
     # Create and start a thread
     tts.init()
-    tts.readText(greetings[1])
-    currentCalendarEvent = getNextCalendarEvent()
-
+    tts.readText(greetings[0])
+    
+    print("Getting today's events...")
+    eventsToday = getAllEventsToday()
     # Start the thread that 
     waitForAlarmThread = threading.Thread(target=waitForAlarmThread, args=())
     waitForAlarmThread.start()

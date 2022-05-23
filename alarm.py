@@ -11,7 +11,6 @@ class ALARMTYPE(Enum):
     endSoon = 3
     onEnd = 4
 
-
 class Alarm:
 
     def __init__(self, goOffDT : datetime.datetime, event: dict, t: ALARMTYPE) -> None:
@@ -36,11 +35,20 @@ class Alarm:
         self.START_MSG = f"Your event, {self.event['summary']} is starting now."
         self.END_SOON_MSG = f"Hey {user}! Your event {self.event['summary']} has about {secondsFromNowUntilDT(stringToDateTime(self.event['end'].get('dateTime')))/60 } minutes left."
         self.ON_EVENT_END_MSG = f"Your event, {self.event['summary']} has ended."
- 
+    
+    def timeLeft(self):
+        return secondsFromNowUntilDT(self.goOffTime)
 
+    def __str__(self):
+        return f"[Alarm] '{self.event['summary']}': {str(self.timeLeft())} minutes until {self.type} alarm"
+    def __eq__(self, other):
+        return self.goOffTime == other.goOffTime
 
+    def __lt__(self, other):
+        return self.goOffTime < other.goOffTime
     
     def goOff(self):
+        print("alarm going off now!!!")
         if (self.type == ALARMTYPE.early):
             s = self.EARLY_MSG
         elif self.type == ALARMTYPE.onStart:
