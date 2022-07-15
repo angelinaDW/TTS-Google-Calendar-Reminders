@@ -59,9 +59,9 @@ def waitUntilDatetimeOrEvent(d: dt, event: Event, timeExpiredCallback: FunctionT
     # Waits until either the current time >= dt, or event happens
     
     result = event.wait( secondsBetween(getCurDT(), d) )
-    if (result): # if the event was triggered
+    if (result): # If there was a restart
         print("Event triggered")
         eventTriggeredCallback(calEvent)
-    else:
+    else: # Time for the event to go off
         print("Time expired")
         timeExpiredCallback()
