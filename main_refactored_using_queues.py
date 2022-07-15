@@ -25,7 +25,7 @@ import random
 SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
 
 # Settings
-CHECK_FOR_CHANGES_TO_CAL_DELAY = 15 # How often to check for changes to the calendar, in seconds
+CHECK_FOR_CHANGES_TO_CAL_DELAY = 4 # How often to check for changes to the calendar, in seconds
 DESKTOP_NOTIFICATIONS = True # Whether to also send desktop notifications
 NOTIFY_WHEN_EVENT_IS_ALMOST_OVER = True # Whether to let the user know when their event is almost over
 NOTIFY_WHEN_EVENT_IS_OVER = True # Whether to let the user know when their event ends
@@ -52,16 +52,13 @@ def printd(msg):
         print(msg)
     
 
-def schedule_say(what):
+def say(what):
     # schedules the main thread to say something
-    global whatToSay
-    global saySomethingEvent
     # Also show a notification, if the user's preferences are set to do so
+    print("made it to say")
     notification.notify(title="Upcoming Event", message=what, app_icon=None, timeout=20)
-    whatToSay = what
-    tts.readText(whatToSay)
-    saySomethingEvent.set()
-    # printd(f"saysomethingevent is_set(): {saySomethingEvent.is_set()}")
+    tts.readText(what)
+    print("exiting say")
 
 import alarm
 
@@ -131,8 +128,6 @@ def getAllEventsToday() -> list[dict]:
 def checkForChangesToCalendar():
     global eventsToday
     while True:
-        #print("here2")
-        #print(f"saysomethingevent is_set(): {saySomethingEvent.is_set()}")
         if (saySomethingEvent.is_set()):
             print("Speaking...")
             tts.readText(whatToSay)
@@ -142,7 +137,7 @@ def checkForChangesToCalendar():
             print("Calendar changes detected.")
             # Tell the other thread it needs to restart
             calendarChangedFromAbove.set()
-            
+            eventsToday = getAllEventsToday()
             # Calendar updated
             
         else:
@@ -168,9 +163,9 @@ def addEventAlarmsToQueue(e: dict):
 def waitForAlarmThread():
     #global currentCalendarEvent # allow us to actually access and modify currentCalendarEvent from inside this funciton
     #print_debug(f"currentCalendarEvent " + str(currentCalendarEvent))
+    print("In waitforAlarmThread")
     restart_flag = False
     global eventsToday
-    #print("did we make it here?")
     eventsToday = getAllEventsToday()
     for calEvent in eventsToday:
         addEventAlarmsToQueue(calEvent)
@@ -181,7 +176,6 @@ def waitForAlarmThread():
 
 
     while len(alarmsQueue) > 0:
-        #print("in here")
         upcomingAlarm: alarm.Alarm = alarmsQueue.take() # Takes the alarm who has been in line the longest out of line
         print(f"upcomingAlarm: {upcomingAlarm}")
         
@@ -190,13 +184,16 @@ def waitForAlarmThread():
         if upcomingAlarm.hasAlreadyPassed() and upcomingAlarm.minutesSincePassed() <= alarm.MAX_LATE_GOOFF:
             print("alarm has already passed")
             upcomingAlarm.goOff()
+            print("made ithere?")
+            continue
         elif upcomingAlarm.hasAlreadyPassed():
             continue # skip this alarm, it's too late now
         else:   # Wait until alarm
             print("Time until next alarm: " + str(upcomingAlarm.timeLeft()/60) + " minutes")
             datetimeUtils.waitUntilDatetimeOrEvent(upcomingAlarm.goOffTime, calendarChangedFromAbove, timeExpiredCallback = upcomingAlarm.goOff, eventTriggeredCallback = onCalendarSync, calEvent = upcomingAlarm.event)
+        print("we should make it here")
 
-    #print("we should make it down here after calendar updated")
+    print("we should make it down here after calendar updated or event goes off")
     waitForAlarmThread()
 def onCalendarSync(calEvent: dict):
     calendarChangedFromAbove.clear() # Reset the flag
@@ -209,7 +206,6 @@ def onCalendarSync(calEvent: dict):
 
 if __name__ == '__main__':
     # Create and start a thread
-    tts.init()
     tts.readText(greetings[random.randrange(0, len(greetings))])
     
     print("Getting today's events...")

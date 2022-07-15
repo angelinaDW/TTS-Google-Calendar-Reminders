@@ -1,12 +1,8 @@
-import pyttsx3
 
-engine = None
-def init():
-    global engine   
-    engine = pyttsx3.init()
+import pyttsx3 as t
+
 def readText(s):
     #print(engine == None)
     print("TTS running")
-    engine.say(s)
-    engine.runAndWait()
+    t.speak(s)
     print("TTS done")

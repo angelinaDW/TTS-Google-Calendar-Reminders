@@ -39,3 +39,13 @@ class myCoolQueue:
             tmp = self._iterationIndex
             self._iterationIndex += 1
             return self.queue[tmp]
+
+if __name__ == '__main__':
+    print("testing")
+    q = myCoolQueue()
+    q.append(1)
+    q.append(2)
+    print(q.take())
+    print(q.take())
+    print(len(q))
+    

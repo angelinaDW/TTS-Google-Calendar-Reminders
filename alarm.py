@@ -1,6 +1,6 @@
 import datetimeUtils
 from datetimeUtils import*
-from main_refactored_using_queues import user, schedule_say
+from main_refactored_using_queues import user, say
 from enum import Enum
 import datetime
 
@@ -59,7 +59,9 @@ class Alarm:
             s = self.START_MSG  
         else:
             raise TypeError()
-        schedule_say(s)
+        say(s)
+        
+        
     
     def hasAlreadyPassed(self):
         '''

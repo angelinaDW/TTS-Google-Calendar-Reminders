@@ -57,11 +57,14 @@ def stringToDateTime(s: str) -> dt:
 
 def waitUntilDatetimeOrEvent(d: dt, event: Event, timeExpiredCallback: FunctionType, eventTriggeredCallback: FunctionType, calEvent: dict):
     # Waits until either the current time >= dt, or event happens
-    
+    print("in waitUntilDatetimeOrEvent")
     result = event.wait( secondsBetween(getCurDT(), d) )
-    if (result): # If there was a restart
+    print("leaving waitUntilDatetimeOrEvent")
+    if (event.is_set()): # If there was a restart
         print("Event triggered")
         eventTriggeredCallback(calEvent)
     else: # Time for the event to go off
         print("Time expired")
         timeExpiredCallback()
+        print("ok ok.")
+        return
